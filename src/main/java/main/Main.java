@@ -3,68 +3,73 @@ package main;
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.HashMap;
-import java.util.HashSet;
 import org.json.JSONObject;
 import utils.Filter;
 import utils.Info;
-import utils.State;
+import utils.StateManager;
 
-
-// Commands of navigation:
 /*
+-----------------------------------------------------------------------------------------------------------------------
+Commands of navigation:
+-----------------------------------------------------------------------------------------------------------------------
 
-add_mfilter tag=value       -> adds metadata filter (Genre=Action)
+add_mfilter [-n] tag=value          -> adds metadata filter (Genre=Action)
 
-rm_mfilter tag=value        -> removes metadata filter (Genre=Action)
+rm_mfilter [-n] tag=value           -> removes metadata filter (Genre=Action)
 
-add_rfilter env->tag=value  -> adds reference filter (2->Director=108)
+add_rfilter [-n] env->tag=value     -> adds reference filter (2->Director=108)
 
-rm_rfilter env->tag=value   -> removes reference filter (2->Director=108)
+rm_rfilter [-n] env->tag=value      -> removes reference filter (2->Director=108)
 
-add_xfilter env=value       -> adds reference filter (2=Director)
+link env-reason                     -> changes to an environment using a specific reason (env=2, reason=Director)
 
-rm_xfilter env=value   -> removes reference filter (2=Director)
+union                               -> stores entities in current_env (union operation)
 
-select ent=value            -> shows entity details (ent=122)
+restore                             -> restores last state (step)
+
+goback                              -> goes to the last environment viewed using the reason with which it was entered
+
+select ent=value                    -> shows entity details (ent=122)
+
+select env                          -> show environment entities
+
+exit                                -> stops program
+
+
+
+
 
 follow env->id              -> follow entity details (1->122)
 
-select env=value            -> show environment entities (env=1, env=this)
 
-restore                     -> restores last state
 
-goback                      -> goes to last environment viewed
-
-exit                        -> stops program
-
- */
+-----------------------------------------------------------------------------------------------------------------------
+*/
 
 public class Main {
 
     public static void main(String[] args) {
-        int current_env = 1;
-        int current_ent = -1;
-        boolean env = true;
-
         boolean error = false;
 
         BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
 
-        Info info = new Info(loadJSON());
-        Filter filter = new Filter(env, current_env, current_ent);
+        Filter filter = new Filter(loadJSON());
 
-        while (true) {
+        Info info = new Info(filter);
 
+        StateManager smanager = new StateManager(selectEnv(info, reader), filter);
+
+        while(true) {
             if(error) {
                 error = false;
             }
-            else{
-                if (env) {
-                    info.printColumns(current_env, filter.getCurrent());
-                    info.printEntities(current_env, filter.getCurrent());
-                } else {
-                    info.printEntity(current_env, current_ent);
+            else {
+                smanager.save();
+                if(smanager.isEnv()) {
+                    info.printEntities(smanager.getCurrent());
+                } 
+                else {
+                    info.printEntity(smanager.getCurrent());
                 }
             }
 
@@ -86,6 +91,7 @@ public class Main {
                 String type;
                 int int_value;
                 boolean back = false;
+                boolean not_filter;
 
                 switch (command) {
                     case "exit":
@@ -94,18 +100,12 @@ public class Main {
                     case "select":
                         argument_parts = argument.split("=", 2);
                         type = argument_parts[0];
-                        int_value = !argument_parts[1].equals("this") ? Integer.parseInt(argument_parts[1]) : -1;
                         switch(type){
                             case "env":
-                                env = true;
-                                if(!argument_parts[1].equals("this")){
-                                    current_env = int_value;
-                                }
-                                filter.newEnv(current_env);
+                                smanager.selectEnv();
                                 break;
                             case "ent":
-                                env = false;
-                                current_ent = int_value;
+                                smanager.selectEnt(Integer.parseInt(argument_parts[1]));
                                 break;
                             default:
                                 System.out.println("Error: invalid argument");
@@ -113,6 +113,7 @@ public class Main {
                         }
                         break;
 
+                        /*
                     case "follow":
                         argument_parts = argument.split("->", 2);
                         int new_env = Integer.parseInt(argument_parts[0]);
@@ -121,77 +122,90 @@ public class Main {
                         current_ent = id;
                         filter.newEnv(current_env);
                         break;
+                    */
 
                     case "add_mfilter":
-                        argument_parts = argument.split("=", 2);
+                        argument_parts = argument.split("\\s+", 2);
+                        not_filter = argument_parts.length == 2 && argument_parts[0].equals("-n");
+                        argument_parts = argument_parts[argument_parts.length - 1].split("=", 2);
                         element = argument_parts[0];
                         value = argument_parts[1];
-                        filter.addMetadataFilter(current_env, element, value);
+                        if(not_filter){
+                            smanager.addNotMetadataFilter(element, value);
+                        }
+                        else {
+                            smanager.addMetadataFilter(element, value);
+                        }
                         break;
 
                     case "rm_mfilter":
-                        argument_parts = argument.split("=", 2);
+                        argument_parts = argument.split("\\s+", 2);
+                        not_filter = argument_parts.length == 2 && argument_parts[0].equals("-n");
+                        argument_parts = argument_parts[argument_parts.length - 1].split("=", 2);
                         element = argument_parts[0];
                         value = argument_parts[1];
-                        filter.removeMetadataFilter(current_env, element, value);
+                        if(not_filter){
+                            smanager.removeNotMetadataFilter(element, value);
+                        }
+                        else {
+                            smanager.removeMetadataFilter(element, value);
+                        }
                         break;
 
                     case "add_rfilter":
-                        argument_parts = argument.split("->", 2);
+                        argument_parts = argument.split("\\s+", 2);
+                        not_filter = argument_parts.length == 2 && argument_parts[0].equals("-n");
+                        argument_parts = argument_parts[argument_parts.length - 1].split("->", 2);
                         int_value = Integer.parseInt(argument_parts[0]);
                         argument_parts = argument_parts[1].split("=", 2);
                         element = argument_parts[0];
                         value = argument_parts[1];
-                        filter.addReferenceFilter(int_value, element, value);
+                        if(not_filter){
+                            smanager.addNotReferenceFilter(int_value, element, value);
+                        }
+                        else {
+                            smanager.addReferenceFilter(int_value, element, value);
+                        }
                         break;
-
+                            
                     case "rm_rfilter":
-                        argument_parts = argument.split("->", 2);
+                        argument_parts = argument.split("\\s+", 2);
+                        not_filter = argument_parts.length == 2 && argument_parts[0].equals("-n");
+                        argument_parts = argument_parts[argument_parts.length - 1].split("->", 2);
                         int_value = Integer.parseInt(argument_parts[0]);
                         argument_parts = argument_parts[1].split("=", 2);
                         element = argument_parts[0];
                         value = argument_parts[1];
-                        filter.removeReferenceFilter(int_value, element, value);
+                        if(not_filter){
+                            smanager.removeNotReferenceFilter(int_value, element, value);
+                        }
+                        else {
+                            smanager.removeReferenceFilter(int_value, element, value);
+                        }
                         break;
 
-
-                    case "add_xfilter":
-                        argument_parts = argument.split("=", 2);
+                    case "link":
+                        argument_parts = argument.split("-", 2);
                         int_value = Integer.parseInt(argument_parts[0]);
-                        value = argument_parts[1];
-                        filter.addReasonFilter(int_value, value, String.valueOf(current_env));
-                        current_env = int_value;
-                        filter.newEnv(current_env);
+                        String reason = argument_parts[1];
+                        smanager.link(int_value, reason);
                         break;
 
-                    case "rm_xfilter":
-                        argument_parts = argument.split("=", 2);
-                        int_value = Integer.parseInt(argument_parts[0]);
-                        value = argument_parts[1];
-                        filter.removeReasonFilter(int_value, value, String.valueOf(current_env));
+                    case "union":
+                        smanager = new StateManager(selectEnv(info, reader), filter, smanager);
                         break;
 
                     case "restore":
-                        back = true;
-                        State prev_state = filter.prevState();
-                        env = prev_state.getIsEnv();
-                        current_env = prev_state.getCurrentEnv();
-                        current_ent = prev_state.getCurrentEnt();
-                        filter.newEnv(current_env);
+                        smanager.restore();
                         break;
-
+                    
                     case "goback":
-
-
+                        smanager.goback();
                         break;
 
                     default:
                         error = true;
                         System.out.println("\nInvalid command. Try again.");
-                }
-
-                if(!back && !error){
-                    filter.saveState(env, current_env, current_ent);
                 }
             }
             catch (IOException e) {
@@ -203,10 +217,24 @@ public class Main {
         }
     }
 
+    private static Integer selectEnv(Info info, BufferedReader reader){
+        Integer selection = null;
+        System.out.println("\nSelect one of the following environments to start navigating");
+        info.printEnvs();
+        System.out.print("Environment: ");
+        try {
+            selection = Integer.parseInt(reader.readLine());
+        } 
+        catch (IOException e) {
+            e.printStackTrace();
+        }
+        return selection;
+    }
+
     private static JSONObject loadJSON(){
         try {
-            String filePath = "src/main/resources/films_dataset.json";
-            //String filePath = "src/main/resources/test.json";
+            //String filePath = "src/main/resources/films_dataset.json";
+            String filePath = "src/main/resources/test_pms.json";
             String content = new String(Files.readAllBytes(Paths.get(filePath)));
 
             return new JSONObject(content);

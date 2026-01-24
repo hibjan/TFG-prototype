@@ -1,247 +1,123 @@
 package utils;
 
-import org.json.JSONArray;
-import org.json.JSONObject;
-
-import java.util.*;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.SortedMap;
+import java.util.SortedSet;
+import java.util.TreeMap;
+import java.util.TreeSet;
 
 public class Info {
-    // ENV (1=Movies) ->
-    // Entity ID (1="X) ->
-    // Field name ->
-    // Content
-    private HashMap<Integer, HashMap<Integer, HashMap<String, String>>> contents_map;
-    // ENV (1=Movies) ->
-    // Filter Name (Genres) ->
-    // Filter Value (Action) ->
-    // Set of IDs from ENV (Movies with Action Genre)
-    private HashMap<Integer, HashMap<String, HashMap<String, HashSet<Integer>>>> metadata_map;
-    // ENV (1=Movies) ->
-    // Entity ID (1="X) ->
-    // Field name ->
-    // Set of values
-    private HashMap<Integer, HashMap<Integer, HashMap<String, HashSet<String>>>> metadata;
-    // ENV (1=Movies) ->
-    // Entity ID (1="X") ->
-    // ENV Reference ID (2=People) ->
-    // Reason ("Actor") ->
-    // Set of IDs from ENV Reference (Actors referenced by X)
-    private HashMap<Integer, HashMap<Integer, HashMap<Integer, HashMap<String, HashSet<Integer>>>>> references_map;
-    // ENV (1=Movies) ->
-    // ENV Reference ID (2=People) ->
-    // Reason ("Actor") ->
-    // Set of IDs from ENV Reference (Actors)
-    private HashMap<Integer, HashMap<Integer, HashMap<String, HashSet<Integer>>>> references_reason_map;
-    // ENV (1=Movies) ->
-    // Column ->
-    // Set of ID-Name
-    private HashMap<Integer, HashMap<String, SortedSet<String>>> columns;
-    // ENV (1=Movies) ->
-    // Column ->
-    // Type (m / r)
-    private HashMap<Integer, HashMap<String, String>> column_type;
-    // ENV (1=Movies) ->
-    // Number of rows the table should have
-    private HashMap<Integer, Integer> rows;
-    // ENV (1=Movies) ->
-    // Width of the columns the table should have
-    private HashMap<Integer, Integer> column_width;
-    // ENV (1=Movies) ->
-    // Name of the environment
-    private HashMap<Integer, String> envs;
     // ANSI escape codes
-    public static final String RESET = "\u001B[0m";
-    public static final String BOLD = "\u001B[1m";
-    public static final String ITALIC = "\u001B[3m";
-    public static final String UNDERLINE = "\u001B[4m";
+    private static final String RESET = "\u001B[0m";
+    private static final String BOLD = "\u001B[1m";
+    private static final String ITALIC = "\u001B[3m";
+    private static final String UNDERLINE = "\u001B[4m";
 
-    public Info(JSONObject dataset){
-        this.contents_map = new HashMap<>();
-        this.metadata_map = new HashMap<>();
-        this.metadata = new HashMap<>();
-        this.references_map = new HashMap<>();
-        this.references_reason_map = new HashMap<>();
+    private Filter filter; 
 
-        this.columns = new HashMap<>();
-        this.column_type = new HashMap<>();
-        this.rows = new HashMap<>();
-        this.column_width = new HashMap<>();
-        this.envs = new HashMap<>();
-
-        this.processJSON(dataset);
+    public Info(Filter filter){
+        this.filter = filter;
     }
 
-    private void processJSON(JSONObject dataset) {
-        JSONArray collections = dataset.getJSONArray("collections");
+    private void printColumns(State state){
+        int colWidth = filter.getColWidth(state.getCurrentEnv());
+        int rows = 0;
+        HashMap<String, SortedMap<String, SortedSet<String>>> columns = new HashMap<>();
 
-        for(int i = 0; i < collections.length(); i++){
-            JSONObject collection = (JSONObject) collections.get(i);
-
-            contents_map.put((Integer) collection.get("id"), new HashMap<>());
-            metadata_map.put((Integer) collection.get("id"), new HashMap<>());
-            metadata.put((Integer) collection.get("id"), new HashMap<>());
-            references_map.put((Integer) collection.get("id"), new HashMap<>());
-            references_reason_map.put((Integer) collection.get("id"), new HashMap<>());
-
-            columns.put((Integer) collection.get("id"), new HashMap<>());
-            column_type.put((Integer) collection.get("id"), new HashMap<>());
-            rows.put((Integer) collection.get("id"), 0);
-            column_width.put((Integer) collection.get("id"), 0);
-            envs.put((Integer) collection.get("id"), (String) collection.get("name"));
-        }
-
-        JSONArray objects = dataset.getJSONArray("objects");
-
-        for(int i = 0; i < objects.length(); i++){
-            JSONObject object = (JSONObject) objects.get(i);
-
-            //CONTENTS
-            contents_map.get((Integer) object.get("collection_id")).put((Integer) object.get("id"), new HashMap<>());
-
-            JSONObject contents = (JSONObject) object.get("contents");
-
-            for (String key : contents.keySet()) {
-                contents_map.get((Integer) object.get("collection_id")).get((Integer) object.get("id")).put(key, (String) contents.get(key));
-            }
-
-            //METADATA
-            JSONObject metadata = (JSONObject) object.get("metadata");
-
-            this.metadata.get((Integer) object.get("collection_id")).put((Integer) object.get("id"), new HashMap<>());
-
-            for (String key : metadata.keySet()) {
-                this.metadata.get((Integer) object.get("collection_id")).get((Integer) object.get("id")).put(key, new HashSet<>());
-
-                if(!metadata_map.get((Integer) object.get("collection_id")).containsKey(key)) {
-                    metadata_map.get((Integer) object.get("collection_id")).put(key, new HashMap<>());
-                }
-
-                //column
-                if(!columns.get((Integer) object.get("collection_id")).containsKey(key)) {
-                    columns.get((Integer) object.get("collection_id")).put(key, new TreeSet<>());
-                    column_type.get((Integer) object.get("collection_id")).put(key, "m");
-                    column_width.put((Integer) object.get("collection_id"), Math.max(column_width.get((Integer) object.get("collection_id")), key.length() + 2));
-                }
-                //column
-
-                JSONArray metadata_values = (JSONArray) metadata.get(key);
-
-                for(int j = 0; j < metadata_values.length(); j++){
-                    this.metadata.get((Integer) object.get("collection_id")).get((Integer) object.get("id")).get(key).add((String) metadata_values.get(j));
-
-                    if(!metadata_map.get((Integer) object.get("collection_id")).get(key).containsKey((String) metadata_values.get(j))) {
-                        metadata_map.get((Integer) object.get("collection_id")).get(key).put((String) metadata_values.get(j), new HashSet<>());
+        //METADATA
+        columns.put("m", new TreeMap<>());
+        for(String column : filter.getMetadata(state.getCurrentEnv()).keySet()){
+            for(String value : filter.getMetadata(state.getCurrentEnv()).get(column).keySet()){
+                HashSet<Integer> set = state.getAvailable();
+                set.retainAll(filter.getMetadataSet(state.getCurrentEnv(), column, value));
+                if(!set.isEmpty() || (set.isEmpty() && state.containsNotMetadataFilter(column, value))){
+                    if(!columns.get("m").containsKey(column)){
+                        columns.get("m").put(column, new TreeSet<>());
                     }
-                    metadata_map.get((Integer) object.get("collection_id")).get(key).get((String) metadata_values.get(j)).add((Integer) object.get("id"));
-
-                    //column
-                    int old_column_size = columns.get((Integer) object.get("collection_id")).get(key).size();
-                    columns.get((Integer) object.get("collection_id")).get(key).add((String) metadata_values.get(j));
-                    int new_column_size = columns.get((Integer) object.get("collection_id")).get(key).size();
+                    if(state.containsMetadataFilter(column, value)){
+                        value = "(*) " + value;
+                    }
+                    else if(state.containsNotMetadataFilter(column, value)){
+                        value = "(!) " + value;
+                    }
+                    int old_column_size = columns.get("m").get(column).size();
+                    columns.get("m").get(column).add(value);
+                    int new_column_size = columns.get("m").get(column).size();
                     if(new_column_size > old_column_size){
-                        rows.put((Integer) object.get("collection_id"), Math.max(rows.get((Integer) object.get("collection_id")), new_column_size));
-                        column_width.put((Integer) object.get("collection_id"), Math.max(column_width.get((Integer) object.get("collection_id")), metadata_values.get(j).toString().length() + 2));
+                        rows = Math.max(rows, new_column_size);
                     }
-                    //column
                 }
-            }
-
-            //REFERENCES
-            JSONArray references = (JSONArray) object.get("references");
-
-            for(int j = 0; j < references.length(); j++) {
-                JSONObject reference = (JSONObject) references.get(j);
-
-                if (!references_map.get((Integer) object.get("collection_id")).containsKey((Integer) object.get("id"))) {
-                    references_map.get((Integer) object.get("collection_id")).put((Integer) object.get("id"), new HashMap<>());
-                }
-
-                if (!references_map.get((Integer) object.get("collection_id")).get((Integer) object.get("id")).containsKey((Integer) reference.get("reference_collection_id"))) {
-                    references_map.get((Integer) object.get("collection_id")).get((Integer) object.get("id")).put((Integer) reference.get("reference_collection_id"), new HashMap<>());
-                }
-
-                if (!references_map.get((Integer) object.get("collection_id")).get((Integer) object.get("id")).get((Integer) reference.get("reference_collection_id")).containsKey((String) reference.get("reason"))) {
-                    references_map.get((Integer) object.get("collection_id")).get((Integer) object.get("id")).get((Integer) reference.get("reference_collection_id")).put((String) reference.get("reason"), new HashSet<>());
-                }
-
-                references_map.get((Integer) object.get("collection_id")).get((Integer) object.get("id")).get((Integer) reference.get("reference_collection_id")).get((String) reference.get("reason")).add((Integer) reference.get("reference_id"));
-
-                //Reason map
-
-                if (!references_reason_map.get((Integer) object.get("collection_id")).containsKey((Integer) reference.get("reference_collection_id"))) {
-                    references_reason_map.get((Integer) object.get("collection_id")).put((Integer) reference.get("reference_collection_id"), new HashMap<>());
-                }
-
-                if (!references_reason_map.get((Integer) object.get("collection_id")).get((Integer) reference.get("reference_collection_id")).containsKey((String) reference.get("reason"))) {
-                    references_reason_map.get((Integer) object.get("collection_id")).get((Integer) reference.get("reference_collection_id")).put((String) reference.get("reason"), new HashSet<>());
-                }
-
-                references_reason_map.get((Integer) object.get("collection_id")).get((Integer) reference.get("reference_collection_id")).get((String) reference.get("reason")).add((Integer) reference.get("reference_id"));
-
-
             }
         }
-
-        //Get reference columns
-        for(int i = 0; i < objects.length(); i++){
-            JSONObject object = (JSONObject) objects.get(i);
-
-            //REFERENCES
-            JSONArray references = (JSONArray) object.get("references");
-
-            for(int j = 0; j < references.length(); j++) {
-                JSONObject reference = (JSONObject) references.get(j);
-
-                //column
-                String column_name = reference.get("reason").toString() + " (" + reference.get("reference_collection_id").toString() + ")";
-                if(!columns.get((Integer) object.get("collection_id")).containsKey(column_name)) {
-                    columns.get((Integer) object.get("collection_id")).put(column_name, new TreeSet<>());
-                    column_type.get((Integer) object.get("collection_id")).put((String) reference.get("reason"), "r");
-                    column_width.put((Integer) object.get("collection_id"), Math.max(column_width.get((Integer) object.get("collection_id")), reference.get("reason").toString().length() + 2));
+           
+        //REFERENCES && LINKS
+        columns.put("r", new TreeMap<>());
+        columns.put("l", new TreeMap<>());
+        columns.get("l").put("Links", new TreeSet<>());
+        for(Integer ent : state.getAvailable()){
+            for(Integer env : filter.getReferences(state.getCurrentEnv(), ent).keySet()){
+                for(String reason : filter.getReferences(state.getCurrentEnv(), ent).get(env).keySet()){
+                    for(Integer reference_ent : filter.getReferenceSet(state.getCurrentEnv(), env, reason, ent.toString())){
+                        // REFERENCES
+                        String column = reason + " (" + env + ")";
+                        if(!columns.get("r").containsKey(column)){
+                            columns.get("r").put(column, new TreeSet<>());
+                        }
+                        String value = filter.getEntName(env, reference_ent) + " (" + reference_ent.toString() + ")";
+                        if(state.containsReferenceFilter(env, reason, reference_ent)){
+                            value = "(*) " + value;
+                        }
+                        int old_column_size = columns.get("r").get(column).size();
+                        columns.get("r").get(column).add(value);
+                        int new_column_size = columns.get("r").get(column).size();
+                        if(new_column_size > old_column_size){
+                            rows = Math.max(rows, new_column_size);
+                        }
+                        // LINKS
+                        if(state.getAvailable(env).contains(reference_ent)){
+                            columns.get("l").get("Links").add(reason + " (" + env + ")");
+                        }
+                    }
                 }
-                String name = contents_map.get((Integer) reference.get("reference_collection_id")).get((Integer) reference.get("reference_id")).get("name");
-                String reference_name = name + " (" + reference.get("reference_id").toString() + ")";
-                int old_column_size = columns.get((Integer) object.get("collection_id")).get(column_name).size();
-                columns.get((Integer) object.get("collection_id")).get(column_name).add(reference_name);
-                int new_column_size = columns.get((Integer) object.get("collection_id")).get(column_name).size();
-                if(new_column_size > old_column_size){
-                    rows.put((Integer) object.get("collection_id"), Math.max(rows.get((Integer) object.get("collection_id")), new_column_size));
-                    column_width.put((Integer) object.get("collection_id"), Math.max(column_width.get((Integer) object.get("collection_id")), reference_name.length() + 2));
-                }
-
-                //Reason
-                if(!columns.get((Integer) object.get("collection_id")).containsKey("Reason")) {
-                    columns.get((Integer) object.get("collection_id")).put("Reason", new TreeSet<>());
-                    column_type.get((Integer) object.get("collection_id")).put("Reason", "x");
-                    column_width.put((Integer) object.get("collection_id"), Math.max(column_width.get((Integer) object.get("collection_id")), 6));
-                }
-
-                String reason_name = (String) reference.get("reason") + " (" + reference.get("reference_collection_id").toString() + ")";
-                old_column_size = columns.get((Integer) object.get("collection_id")).get("Reason").size();
-                columns.get((Integer) object.get("collection_id")).get("Reason").add(reason_name);
-                new_column_size = columns.get((Integer) object.get("collection_id")).get("Reason").size();
-                if(new_column_size > old_column_size){
-                    rows.put((Integer) object.get("collection_id"), Math.max(rows.get((Integer) object.get("collection_id")), new_column_size));
-                    column_width.put((Integer) object.get("collection_id"), Math.max(column_width.get((Integer) object.get("collection_id")), reason_name.length() + 2));
-                }
-
-                //column
             }
         }
-    }
-
-    public void printColumns(int env, HashMap<Integer, HashMap<String, HashMap<String, HashSet<String>>>> filters){
-        printEnv(env);
-
-        int colWidth = this.column_width.get(env);
-        int rows = this.rows.get(env);
-
+        for(Integer env : state.getNotReferenceFilter().keySet()){
+            for(String reason : state.getNotReferenceFilter().get(env).keySet()){
+                for(String reference_ent : state.getNotReferenceFilter().get(env).get(reason)){
+                    String column = reason + " (" + env + ")";
+                    if(!columns.get("r").containsKey(column)){
+                        columns.get("r").put(column, new TreeSet<>());
+                    }
+                    String value = "(!) " + filter.getEntName(env, Integer.parseInt(reference_ent)) + " (" + reference_ent + ")";
+                    int old_column_size = columns.get("r").get(column).size();
+                    columns.get("r").get(column).add(value);
+                    int new_column_size = columns.get("r").get(column).size();
+                    if(new_column_size > old_column_size){
+                        rows = Math.max(rows, new_column_size);
+                    }
+                }
+            }
+        }
+        /* 
+        for(){
+            
+            String value = filter.getEntName(env, reference_ent) + " (" + reference_ent.toString() + ")";
+            else if(state.containsNotReferenceFilter(env, reason, reference_ent)){
+                            value = "(!) " + value;
+                        }
+        }
+                        */
+    
         StringBuilder sb = new StringBuilder();
         StringBuilder sb_line = new StringBuilder();
-        for(String column : this.columns.get(env).keySet()){
-            sb.append(String.format("| %-" + colWidth + "s ", column));
-            sb_line.append("+").append("-".repeat(colWidth + 2));
+        for(String type : columns.keySet()){
+            for(String column : columns.get(type).keySet()){
+                sb.append(String.format("| %-" + colWidth + "s ", column));
+                sb_line.append("+").append("-".repeat(colWidth + 2));
+            }
         }
+
         sb.append(" |");
         sb_line.append("+");
         String header = sb.toString();
@@ -251,60 +127,21 @@ public class Info {
         System.out.println(header);
         System.out.println(line);
 
-
         for (int i = 0; i < rows; i++) {
             StringBuilder sb_row = new StringBuilder();
-            for(String column : this.columns.get(env).keySet()){
-                int j = 0;
-                String col_name = "";
-                for (String val : this.columns.get(env).get(column)) {
-                    if (j == i) { // stop at third element
-                        col_name = val;
-                        break;
+            for(String type : columns.keySet()){
+                for(String column : columns.get(type).keySet()){
+                   int j = 0;
+                    String col_name = "";
+                    for (String val : columns.get(type).get(column)) {
+                        if (j == i) {
+                            col_name = val;
+                            break;
+                        }
+                        j++;
                     }
-                    j++;
+                    sb_row.append(String.format("| %-" + colWidth + "s ", col_name));
                 }
-
-                if(!col_name.isEmpty() && filters.containsKey(env) && column_type.get(env).containsKey(column)){
-                    switch (column_type.get(env).get(column)) {
-                        case "m" ->{
-                            if(filters.get(env).containsKey("m") && filters.get(env).get("m").containsKey(column) && filters.get(env).get("m").get(column).contains(col_name)){
-                                col_name =  "* " + col_name;
-                            }
-                        }
-
-                        //NEVER ENTERS HERE BECAUSE R AND X HAVE REFERENCE_ID OF NOT CURRENT
-                        // TODO maybe have column_env in other to do the indexing
-
-                        /*
-                        case "r" -> {
-                            int start = col_name.indexOf('(') + 1;
-                            int end = col_name.indexOf(')');
-
-                            String number = col_name.substring(start, end);
-
-                            if(filters.get(env).containsKey("r") && filters.get(env).get("r").containsKey(column) && filters.get(env).get("r").get(column).contains(number)){
-                                col_name =  "* " + col_name;
-                            }
-                        }
-                        case "x" -> {
-                            int start = col_name.indexOf('(') + 1;
-                            int end = col_name.indexOf(')');
-
-                            Integer number = Integer.parseInt(col_name.substring(start, end));
-
-                            int index = col_name.indexOf('(');
-                            String reason = col_name.substring(0, index-1);
-
-                            if(filters.get(number).containsKey("x") && filters.get(number).get("x").containsKey(reason) && filters.get(number).get("x").get(reason).contains(String.valueOf(env))){
-                                col_name =  "* " + col_name;
-                            }
-                        }
-                        */
-                    }
-                }
-
-                sb_row.append(String.format("| %-" + colWidth + "s ", col_name));
             }
             sb_row.append(" |");
             String row = sb_row.toString();
@@ -314,109 +151,36 @@ public class Info {
         // Bottom line
         System.out.println(line);
         System.out.println();
-
     }
 
-    public void printEntities(int env, HashMap<Integer, HashMap<String, HashMap<String, HashSet<String>>>> filters){
-        HashSet<Integer> result = new HashSet<>();
-        HashSet<Integer> selections = new HashSet<>();
-        if(filters.isEmpty()){
-            System.out.println("Every entity part of the collection: " + env);
+    public void printEntities(State state){
+        printEnv(state.getCurrentEnv());
+        printColumns(state);
+
+        for(Integer id : state.getAvailable()){
+            System.out.println(filter.getEntName(state.getCurrentEnv(), id) + " (" + id + ")");
         }
-        else {
-            for(Integer env_filter : filters.keySet()){
-                for(String type : filters.get(env_filter).keySet()){
-                    for(String filter : filters.get(env_filter).get(type).keySet()){
-                        for (String value : filters.get(env_filter).get(type).get(filter)) {
-                            switch (type) {
-                                case "m" -> {
-                                    if (env_filter.equals(env)) {
-                                        if (result.isEmpty()) {
-                                            result = new HashSet<>(metadata_map.get(env_filter).get(filter).get(value));
-                                        }
-                                        else {
-                                            result.retainAll(metadata_map.get(env_filter).get(filter).get(value));
-                                        }
-                                    }
-                                    else {
-                                        HashSet<Integer> trans = new HashSet<>();
-                                        for (Integer id : metadata_map.get(env_filter).get(filter).get(value)) {
-                                            for (String reason : references_map.get(env_filter).get(id).get(env).keySet()) {
-                                                if (trans.isEmpty()) {
-                                                    trans = new HashSet<>(references_map.get(env_filter).get(id).get(env).get(reason));
-                                                } else {
-                                                    trans.addAll(references_map.get(env_filter).get(id).get(env).get(reason));
-                                                }
-                                            }
-                                        }
-                                        if (result.isEmpty()) {
-                                            result = trans;
-                                        }
-                                        else {
-                                            result.retainAll(trans);
-                                        }
-                                    }
-                                }
-                                case "r" -> {
-                                    if (!env_filter.equals(env)) {
-                                        if (result.isEmpty()) {
-                                            result = new HashSet<>(references_map.get(env_filter).get(Integer.parseInt(value)).get(env).get(filter));
-                                        }
-                                        else {
-                                            result.retainAll(references_map.get(env_filter).get(Integer.parseInt(value)).get(env).get(filter));
-                                        }
-                                    }
-                                    else {
-                                        selections.add(Integer.parseInt(value));
-                                    }
-                                }
-                                case "x" -> {
-                                    if (!env_filter.equals(env)) {
-                                        HashSet<Integer> trans = new HashSet<>();
-                                        for (Integer id : references_reason_map.get(Integer.parseInt(value)).get(env_filter).get(filter)) {
-                                            for (String reason : references_map.get(env_filter).get(id).get(env).keySet()) {
-                                                if (reason.equals(filter)) {
-                                                    if (trans.isEmpty()) {
-                                                        trans = new HashSet<>(references_map.get(env_filter).get(id).get(env).get(reason));
-                                                    }
-                                                    else {
-                                                        trans.addAll(references_map.get(env_filter).get(id).get(env).get(reason));
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        if (result.isEmpty()) {
-                                            result = trans;
-                                        }
-                                        else {
-                                            result.retainAll(trans);
-                                        }
-                                    }
-                                    else {
-                                        selections.addAll(references_reason_map.get(Integer.parseInt(value)).get(env_filter).get(filter));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+        System.out.println("\n------\n");
+        for(Integer env : state.getUnionSet().keySet()){
+            for(Integer id : state.getUnionSet().get(env)){
+                System.out.println(filter.getEnvNames().get(env) + " (" + env + ")" + " - " + filter.getEntName(env, id) + " (" + id + ")");
             }
         }
-
-        if(!selections.isEmpty() && !result.isEmpty()){
-            result.retainAll(selections);
-        }
-        else if(!selections.isEmpty()){
-            result = selections;
-        }
-
-        for(Integer id : result){
-            System.out.println(contents_map.get(env).get(id).get("name") + " (" + id + ")");
-        }
     }
 
-    public void printEntity(int currentEnv, int id) {
-        printEnv(currentEnv);
+    public void printEntity(State state) {
+
+        printEnv(state.getCurrentEnv());
+
+        //CONTENTS
+        for(String content : filter.getEntContents(state.getCurrentEnv(), state.getCurrentEnt()).keySet()){
+            String value = filter.getEntContents(state.getCurrentEnv(), state.getCurrentEnt()).get(content);
+            System.out.println(UNDERLINE + content + RESET + ": " + value);
+            System.out.println();
+        }
+
+
+        /* 
 
         //CONTENTS
         for(String content : contents_map.get(currentEnv).get(id).keySet()){
@@ -445,6 +209,11 @@ public class Info {
             }
             System.out.println();
         }
+        */
+    }
+
+    public void printEnvs(){
+        printEnv(-1);
     }
 
     private void printEnv(int env){
@@ -453,9 +222,9 @@ public class Info {
         StringBuilder sb_env = new StringBuilder();
         sb_env.append("[");
         boolean first = true;
-        for(Integer environ : this.envs.keySet()){
-            String name = this.envs.get(environ);
-            sb_env.append(first ? " " : ", ").append(environ == env ? BOLD + UNDERLINE + name + " (" + environ + ")" + RESET : name);
+        for(Integer environ : this.filter.getEnvNames().keySet()){
+            String name = this.filter.getEnvNames().get(environ);
+            sb_env.append(first ? " " : ", ").append(environ == env ? BOLD + UNDERLINE + name + " (" + environ + ")" + RESET : name + " (" + environ + ")");
             if(first){
                 first = false;
             }
