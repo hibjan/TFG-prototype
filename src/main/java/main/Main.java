@@ -1,8 +1,6 @@
 package main;
 
 import java.io.*;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 import org.json.JSONObject;
 import utils.Filter;
 import utils.Info;
@@ -232,11 +230,14 @@ public class Main {
     }
 
     private static JSONObject loadJSON(){
-        try {
-            //String filePath = "src/main/resources/films_dataset.json";
-            String filePath = "src/main/resources/test_pms.json";
-            String content = new String(Files.readAllBytes(Paths.get(filePath)));
-
+        //String resourcePath = "/films_dataset.json";
+        String resourcePath = "/test_pms.json";
+        try (InputStream is = Main.class.getResourceAsStream(resourcePath)) {
+            if (is == null) {
+                System.out.println("Error: resource not found: " + resourcePath);
+                return null;
+            }
+            String content = new String(is.readAllBytes());
             return new JSONObject(content);
         }
         catch (IOException e){
